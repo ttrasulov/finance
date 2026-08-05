@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 
 DB_NAME = 'finance_bot.db'
 
@@ -22,7 +23,7 @@ def init_db():
             user_id INTEGER,
             category TEXT,
             amount INTEGER,
-            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (user_id)
         )
     ''')
@@ -75,7 +76,7 @@ def get_total_expenses(user_id):
     return result[0] if result else 0
 
 def get_expenses(user_id):
-    """Получить список расходов"""
+    """Получить список расходов (последние 50)"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
@@ -83,10 +84,65 @@ def get_expenses(user_id):
         FROM expenses 
         WHERE user_id = ? 
         ORDER BY date DESC
+        LIMIT 50
     ''', (user_id,))
     result = cursor.fetchall()
     conn.close()
     return result
+
+def get_expenses_by_month(user_id, year_month):
+    """Получить расходы за конкретный месяц по категориям"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT category, SUM(amount), date
+        FROM expenses 
+        WHERE user_id = ? AND strftime('%Y-%m', date) = ?
+        GROUP BY category
+        ORDER BY date DESC
+    ''', (user_id, year_month))
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+def get_expenses_by_date(user_id, date_str):
+    """Получить расходы за конкретную дату"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT category, amount, date
+        FROM expenses 
+        WHERE user_id = ? AND date LIKE ?
+        ORDER BY date DESC
+    ''', (user_id, f"{date_str}%"))
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+def delete_last_expense(user_id):
+    """Удалить последний расход пользователя"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Находим последний расход
+    cursor.execute('''
+        SELECT id, category, amount, date
+        FROM expenses 
+        WHERE user_id = ? 
+        ORDER BY id DESC 
+        LIMIT 1
+    ''', (user_id,))
+    result = cursor.fetchone()
+    
+    if result:
+        expense_id = result[0]
+        cursor.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
+        conn.commit()
+        conn.close()
+        return result[1:]  # Возвращаем category, amount, date
+    else:
+        conn.close()
+        return None
 
 def clear_data(user_id):
     """Очистить все данные пользователя"""
