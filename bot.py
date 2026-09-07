@@ -21,7 +21,6 @@ def get_main_keyboard():
         KeyboardButton("💰 Баланс"),
         KeyboardButton("📊 Статистика"),
         KeyboardButton("📝 Добавить расход"),
-        KeyboardButton("💳 Установить зарплату"),
         KeyboardButton("📋 Все расходы"),
         KeyboardButton("📅 Расходы за сегодня"),
         KeyboardButton("🗑️ Сбросить данные")
@@ -72,7 +71,8 @@ def get_categories_keyboard():
     categories = [
         "Продукты", "Мясо", "Бытовая химия", "Заправка",
         "Жене на кофе", "Садик", "Свет", "Газ", "Вода",
-        "Телефон", "Интернет", "ЖЭК", "Мусор", "Аптека", "Прочее"
+        "Телефон", "Интернет", "ЖЭК", "Мусор", "Аптека", 
+        "Одежда", "Прочее"
     ]
     
     # Добавляем категории по 2 в ряд
@@ -108,7 +108,6 @@ def send_welcome(message):
         "💰 Баланс - посмотреть остаток\n"
         "📊 Статистика - отчет по месяцам\n"
         "📝 Добавить расход - записать трату\n"
-        "💳 Установить зарплату - установить/изменить зарплату\n"
         "📋 Все расходы - список всех трат\n"
         "📅 Расходы за сегодня - траты за день\n\n"
         "⚙️ **Управление:**\n"
@@ -117,116 +116,17 @@ def send_welcome(message):
         reply_markup=get_main_keyboard()
     )
 
-@bot.message_handler(commands=['salary'])
-def set_salary_command(message):
-    user_id = message.from_user.id
-    try:
-        parts = message.text.split()
-        if len(parts) != 2:
-            bot.reply_to(
-                message,
-                "❌ Используй: /salary 5000000\n\n"
-                "Или нажми кнопку '💳 Установить зарплату'",
-                reply_markup=get_main_keyboard()
-            )
-            return
-        amount = int(parts[1].replace(',', ''))
-        set_salary(user_id, amount)
-        bot.reply_to(
-            message,
-            f"✅ Зарплата установлена: {amount:,} сум",
-            reply_markup=get_main_keyboard()
-        )
-    except ValueError:
-        bot.reply_to(
-            message,
-            "❌ Введи корректную сумму (число)",
-            reply_markup=get_main_keyboard()
-        )
-
 # ================= ОБРАБОТКА КНОПОК ГЛАВНОГО МЕНЮ =================
-
-@bot.message_handler(func=lambda message: message.text == "💳 Установить зарплату")
-def set_salary_button(message):
-    """Обработка кнопки установки зарплаты"""
-    user_id = message.from_user.id
-    
-    # Проверяем текущую зарплату
-    current_salary = get_salary(user_id)
-    
-    if current_salary > 0:
-        # Показываем текущую зарплату и предлагаем изменить
-        keyboard = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-        keyboard.add(
-            KeyboardButton(f"💰 Оставить {current_salary:,}"),
-            KeyboardButton("❌ Отмена")
-        )
-        bot.reply_to(
-            message,
-            f"📌 **Текущая зарплата:** {current_salary:,} сум\n\n"
-            "💰 Введите новую сумму зарплаты:\n"
-            "Например: 5000000\n\n"
-            "Или нажмите кнопку ниже, чтобы оставить текущую:",
-            parse_mode="Markdown",
-            reply_markup=keyboard
-        )
-        # Сохраняем состояние
-        user_states[user_id] = {'step': 'waiting_salary'}
-    else:
-        # Если зарплаты нет, просто просим ввести
-        user_states[user_id] = {'step': 'waiting_salary'}
-        bot.reply_to(
-            message,
-            "💰 **Введите сумму зарплаты**\n\n"
-            "Например: 5000000\n\n"
-            "Или нажмите ❌ Отмена",
-            parse_mode="Markdown",
-            reply_markup=get_salary_cancel_keyboard()
-        )
-
-def get_salary_cancel_keyboard():
-    """Клавиатура с кнопкой отмены для зарплаты"""
-    keyboard = ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
-    keyboard.add(KeyboardButton("❌ Отмена"))
-    return keyboard
 
 @bot.message_handler(func=lambda message: message.text == "💰 Баланс")
 def balance_command(message):
     user_id = message.from_user.id
-    salary = get_salary(user_id)
     total_exp = get_total_expenses(user_id)
-    balance = salary - total_exp
-    
-    if salary == 0:
-        bot.reply_to(
-            message,
-            "⚠️ У вас не установлена зарплата!\n"
-            "Нажмите кнопку '💳 Установить зарплату'",
-            reply_markup=get_main_keyboard()
-        )
-        return
-    
-    # Считаем процент
-    percent = int((total_exp / salary) * 100) if salary > 0 else 0
-    
-    # Создаем прогресс-бар
-    bar_length = 20
-    filled = int(bar_length * total_exp / salary) if salary > 0 else 0
-    if filled > bar_length:
-        filled = bar_length
-    bar = "█" * filled + "░" * (bar_length - filled)
-    
-    status = "🟢 Отлично!" if percent < 30 else "🟡 Нормально" if percent < 60 else "🔴 Много тратите!"
     
     bot.reply_to(
         message,
         f"💰 **БАЛАНС**\n\n"
-        f"💵 Зарплата: {salary:,} сум\n"
-        f"📉 Расходы: {total_exp:,} сум\n"
-        f"📊 Остаток: {balance:,} сум\n\n"
-        f"📊 Прогресс: {bar}\n"
-        f"{percent}% использовано\n\n"
-        f"📌 {status}",
+        f"📉 Расходы: {total_exp:,} сум",
         parse_mode="Markdown",
         reply_markup=get_main_keyboard()
     )
@@ -248,7 +148,6 @@ def stats_command(message):
         return
     
     total = sum(amt for _, amt, _ in expenses)
-    salary = get_salary(user_id)
     
     text = f"📊 **ОТЧЕТ ЗА {month_name.upper()}**\n\n"
     
@@ -259,20 +158,6 @@ def stats_command(message):
         text += f"• {cat}: {amt:,} сум\n"
     
     text += f"\n💰 **ИТОГО: {total:,} сум**"
-    
-    if salary > 0:
-        percent = int((total / salary) * 100)
-        text += f"\n📊 Процент от зарплаты: {percent}%"
-        
-        # Добавляем оценку
-        if percent < 30:
-            text += "\n✅ Отличное управление бюджетом!"
-        elif percent < 50:
-            text += "\n👍 Хорошо, но есть запас"
-        elif percent < 70:
-            text += "\n⚠️ Обратите внимание на расходы"
-        else:
-            text += "\n🔴 Вы превышаете бюджет!"
     
     bot.reply_to(message, text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
@@ -468,16 +353,6 @@ def cancel_clear(message):
 def add_expense_start(message):
     user_id = message.from_user.id
     
-    salary = get_salary(user_id)
-    if salary == 0:
-        bot.reply_to(
-            message,
-            "⚠️ Сначала установите зарплату!\n"
-            "Нажмите кнопку '💳 Установить зарплату'",
-            reply_markup=get_main_keyboard()
-        )
-        return
-    
     # Сохраняем состояние - ожидание ввода суммы
     user_states[user_id] = {'step': 'waiting_amount'}
     
@@ -510,55 +385,8 @@ def handle_messages(message):
     if user_id in user_states:
         step = user_states[user_id].get('step')
         
-        # ========== ОБРАБОТКА УСТАНОВКИ ЗАРПЛАТЫ ==========
-        if step == 'waiting_salary':
-            # Проверяем, не нажата ли кнопка "Оставить текущую"
-            if text.startswith("💰 Оставить"):
-                bot.reply_to(
-                    message,
-                    f"✅ Зарплата осталась: {get_salary(user_id):,} сум",
-                    reply_markup=get_main_keyboard()
-                )
-                if user_id in user_states:
-                    del user_states[user_id]
-                return
-            
-            # Пробуем распарсить сумму
-            try:
-                clean_text = text.replace(' ', '').replace(',', '').replace('.', '')
-                amount = int(clean_text)
-                
-                if amount <= 0:
-                    bot.reply_to(
-                        message, 
-                        "❌ Сумма должна быть больше 0\n\nПопробуйте снова:",
-                        reply_markup=get_salary_cancel_keyboard()
-                    )
-                    return
-                
-                # Сохраняем зарплату
-                set_salary(user_id, amount)
-                
-                # Удаляем состояние
-                if user_id in user_states:
-                    del user_states[user_id]
-                
-                bot.reply_to(
-                    message,
-                    f"✅ **Зарплата установлена:** {amount:,} сум",
-                    parse_mode="Markdown",
-                    reply_markup=get_main_keyboard()
-                )
-                
-            except ValueError:
-                bot.reply_to(
-                    message,
-                    "❌ Введите корректную сумму (число)\n\nПример: 5000000",
-                    reply_markup=get_salary_cancel_keyboard()
-                )
-        
         # ========== ОБРАБОТКА ДОБАВЛЕНИЯ РАСХОДА ==========
-        elif step == 'waiting_amount':
+        if step == 'waiting_amount':
             # Пробуем распарсить сумму
             try:
                 clean_text = text.replace(' ', '').replace(',', '').replace('.', '')
@@ -623,7 +451,7 @@ def handle_messages(message):
                     f"📂 Категория: {category}\n"
                     f"💰 Сумма: {amount:,} сум\n"
                     f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
-                    f"Остаток: {get_salary(user_id) - get_total_expenses(user_id):,} сум",
+                    f"📊 Всего расходов: {get_total_expenses(user_id):,} сум",
                     parse_mode="Markdown",
                     reply_markup=get_main_keyboard()
                 )
@@ -644,12 +472,9 @@ def handle_messages(message):
     
     else:
         # Если нет состояния, проверяем специальные кнопки
-        if text.startswith("💰 Оставить"):
-            # Игнорируем, так как уже обработано выше
-            pass
-        elif text not in ["💰 Баланс", "📊 Статистика", "📝 Добавить расход", 
+        if text not in ["💰 Баланс", "📊 Статистика", "📝 Добавить расход", 
                         "📋 Все расходы", "📅 Расходы за сегодня", "🗑️ Сбросить данные",
-                        "🔙 Назад", "🗑️ Удалить последний", "💳 Установить зарплату"]:
+                        "🔙 Назад", "🗑️ Удалить последний"]:
             bot.reply_to(
                 message,
                 "❓ Используйте кнопки меню для управления ботом.\n\n"
@@ -687,7 +512,8 @@ def get_categories_list():
     return [
         "Продукты", "Мясо", "Бытовая химия", "Заправка",
         "Жене на кофе", "Садик", "Свет", "Газ", "Вода",
-        "Телефон", "Интернет", "ЖЭК", "Мусор", "Аптека", "Прочее"
+        "Телефон", "Интернет", "ЖЭК", "Мусор", "Аптека",
+        "Одежда", "Прочее"
     ]
 
 def get_last_expense_id(user_id):
@@ -732,7 +558,6 @@ def show_expenses_by_month(message, user_id, month, month_name):
         return
     
     total = sum(amt for _, amt, _ in expenses)
-    salary = get_salary(user_id)
     
     text = f"📋 **РАСХОДЫ ЗА {month_name.upper()}**\n\n"
     
@@ -744,10 +569,6 @@ def show_expenses_by_month(message, user_id, month, month_name):
         text += f"• {cat}: {amt:,} сум ({date_str})\n"
     
     text += f"\n💰 **ИТОГО ЗА МЕСЯЦ: {total:,} сум**"
-    
-    if salary > 0:
-        percent = int((total / salary) * 100)
-        text += f"\n📊 {percent}% от зарплаты"
     
     bot.reply_to(message, text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
