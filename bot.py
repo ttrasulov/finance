@@ -21,12 +21,50 @@ def get_main_keyboard():
         KeyboardButton("💰 Баланс"),
         KeyboardButton("📊 Статистика"),
         KeyboardButton("📝 Добавить расход"),
-        KeyboardButton("💳 Установить зарплату"),  # НОВАЯ КНОПКА
+        KeyboardButton("💳 Установить зарплату"),
         KeyboardButton("📋 Все расходы"),
         KeyboardButton("📅 Расходы за сегодня"),
         KeyboardButton("🗑️ Сбросить данные")
     )
     return keyboard
+
+def get_months_keyboard():
+    """Клавиатура с выбором месяца"""
+    keyboard = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    
+    # Получаем список месяцев, в которых есть расходы
+    months = get_available_months()
+    
+    if months:
+        # Добавляем кнопки с месяцами (по 2 в ряд)
+        row = []
+        for month in months:
+            year, month_num = month.split('-')
+            month_name = datetime(int(year), int(month_num), 1).strftime("%B %Y")
+            row.append(KeyboardButton(f"📅 {month_name}"))
+            if len(row) == 2:
+                keyboard.add(*row)
+                row = []
+        if row:
+            keyboard.add(*row)
+    else:
+        keyboard.add(KeyboardButton("📭 Нет расходов"))
+    
+    # Всегда добавляем кнопку "Все расходы" и "Назад"
+    keyboard.add(
+        KeyboardButton("📋 Все расходы"),
+        KeyboardButton("🔙 Назад")
+    )
+    
+    return keyboard
+
+def get_previous_month():
+    """Возвращает предыдущий месяц в формате YYYY-MM"""
+    from datetime import datetime, timedelta
+    today = datetime.now()
+    first_day_of_month = today.replace(day=1)
+    previous_month = first_day_of_month - timedelta(days=1)
+    return previous_month.strftime("%Y-%m")
 
 def get_categories_keyboard():
     """Клавиатура с категориями расходов (без эмодзи)"""
@@ -238,11 +276,28 @@ def stats_command(message):
     
     bot.reply_to(message, text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
+# ================= ВЫБОР МЕСЯЦА ДЛЯ РАСХОДОВ =================
+
+def get_available_months():
+    """Возвращает список месяцев, в которых есть расходы"""
+    import sqlite3
+    conn = sqlite3.connect('finance_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT DISTINCT strftime('%Y-%m', date) as month
+        FROM expenses
+        ORDER BY month DESC
+    ''')
+    results = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in results]
+
 @bot.message_handler(func=lambda message: message.text == "📋 Все расходы")
 def list_expenses_command(message):
     user_id = message.from_user.id
-    expenses = get_expenses(user_id)
     
+    # Проверяем, есть ли вообще расходы
+    expenses = get_expenses(user_id)
     if not expenses:
         bot.reply_to(
             message,
@@ -252,12 +307,57 @@ def list_expenses_command(message):
         )
         return
     
+    bot.reply_to(
+        message,
+        "📋 **Выберите месяц:**\n\n"
+        "Нажмите на месяц, чтобы посмотреть расходы за него.\n"
+        "📋 Все расходы - показать все записи.",
+        parse_mode="Markdown",
+        reply_markup=get_months_keyboard()
+    )
+
+@bot.message_handler(func=lambda message: message.text.startswith("📅 ") and message.text != "📅 Расходы за сегодня")
+def handle_month_selection(message):
+    """Обработка выбора месяца из списка"""
+    user_id = message.from_user.id
+    
+    # Извлекаем название месяца из кнопки
+    month_text = message.text.replace("📅 ", "")
+    
+    # Парсим месяц (формат: "January 2025")
+    try:
+        month_date = datetime.strptime(month_text, "%B %Y")
+        month = month_date.strftime("%Y-%m")
+        month_name = month_text
+    except ValueError:
+        bot.reply_to(
+            message,
+            "❌ Не удалось распознать месяц. Попробуйте еще раз.",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
+    # Показываем расходы за выбранный месяц
+    show_expenses_by_month(message, user_id, month, month_name)
+
+@bot.message_handler(func=lambda message: message.text == "📋 Все расходы")
+def show_all_expenses_from_menu(message):
+    user_id = message.from_user.id
+    expenses = get_expenses(user_id)
+    
+    if not expenses:
+        bot.reply_to(
+            message,
+            "📭 У вас пока нет расходов.",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
     text = "📋 **ВСЕ РАСХОДЫ:**\n\n"
     total = 0
     
     for cat, amt, date in expenses[:20]:
         total += amt
-        # Форматируем дату
         date_obj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
         date_str = date_obj.strftime("%d.%m.%Y %H:%M")
         text += f"• {cat}: {amt:,} сум ({date_str})\n"
@@ -267,14 +367,7 @@ def list_expenses_command(message):
     
     text += f"\n💰 **ВСЕГО РАСХОДОВ: {total:,} сум**"
     
-    # Добавляем кнопки управления
-    keyboard = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    keyboard.add(
-        KeyboardButton("🗑️ Удалить последний"),
-        KeyboardButton("🔙 Назад")
-    )
-    
-    bot.reply_to(message, text, parse_mode="Markdown", reply_markup=keyboard)
+    bot.reply_to(message, text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
 @bot.message_handler(func=lambda message: message.text == "📅 Расходы за сегодня")
 def today_command(message):
@@ -599,6 +692,7 @@ def get_categories_list():
 
 def get_last_expense_id(user_id):
     """Получить ID последнего расхода"""
+    import sqlite3
     conn = sqlite3.connect('finance_bot.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -613,6 +707,7 @@ def get_last_expense_id(user_id):
 
 def delete_expense_by_id(record_id, user_id):
     """Удалить расход по ID"""
+    import sqlite3
     conn = sqlite3.connect('finance_bot.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -623,6 +718,38 @@ def delete_expense_by_id(record_id, user_id):
     affected = cursor.rowcount
     conn.close()
     return affected > 0
+
+def show_expenses_by_month(message, user_id, month, month_name):
+    """Показывает расходы за конкретный месяц"""
+    expenses = get_expenses_by_month(user_id, month)
+    
+    if not expenses:
+        bot.reply_to(
+            message,
+            f"📭 За {month_name} расходов нет.",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
+    total = sum(amt for _, amt, _ in expenses)
+    salary = get_salary(user_id)
+    
+    text = f"📋 **РАСХОДЫ ЗА {month_name.upper()}**\n\n"
+    
+    sorted_expenses = sorted(expenses, key=lambda x: x[2])
+    
+    for cat, amt, date in sorted_expenses:
+        date_obj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+        date_str = date_obj.strftime("%d.%m")
+        text += f"• {cat}: {amt:,} сум ({date_str})\n"
+    
+    text += f"\n💰 **ИТОГО ЗА МЕСЯЦ: {total:,} сум**"
+    
+    if salary > 0:
+        percent = int((total / salary) * 100)
+        text += f"\n📊 {percent}% от зарплаты"
+    
+    bot.reply_to(message, text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
 # ================= ЗАПУСК БОТА =================
 
